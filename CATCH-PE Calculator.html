@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CATCH-PE Calculator</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1b2430;--muted:#5d6b7c;--line:#dde2e8;--accent:#0b6bcb;--accent-bg:#e7f1fc;--pos:#b42318;--neg:#127a43;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10151c;--card:#19212b;--text:#e8edf3;--muted:#98a6b6;--line:#2b3644;--accent:#5aa7f2;--accent-bg:#1b2d44;--pos:#ff8a7a;--neg:#5fd39a}}
+:root[data-theme="dark"]{--bg:#10151c;--card:#19212b;--text:#e8edf3;--muted:#98a6b6;--line:#2b3644;--accent:#5aa7f2;--accent-bg:#1b2d44;--pos:#ff8a7a;--neg:#5fd39a}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:1.35rem;margin:4px 0 2px}
+.sub{color:var(--muted);font-size:.88rem;margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.card h2{font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.q{padding:10px 0;border-top:1px solid var(--line)}
+.q:first-of-type{border-top:0}
+.q>label.t,.q>.t{display:block;font-weight:600;margin-bottom:6px}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opts input{position:absolute;opacity:0;pointer-events:none}
+.opts label{border:1px solid var(--line);border-radius:999px;padding:7px 13px;cursor:pointer;font-size:.92rem;user-select:none}
+.opts input:checked+label{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:600}
+.opts input:focus-visible+label{outline:2px solid var(--accent)}
+.hint{color:var(--muted);font-size:.8rem;margin-top:4px}
+.res{position:sticky;bottom:0;background:var(--card);border:1px solid var(--accent);border-radius:14px;padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;box-shadow:0 -4px 16px rgba(0,0,0,.12);margin-bottom:12px}
+.res div{text-align:center}
+.res .lbl{font-size:.75rem;color:var(--muted)}
+.res .val{font-size:2rem;font-weight:700;line-height:1.1}
+.wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th,td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600}
+tr.on td{background:var(--accent-bg);font-weight:600}
+.pos{color:var(--pos)}.neg{color:var(--neg)}
+button{font:inherit;border:1px solid var(--line);background:transparent;color:var(--text);border-radius:10px;padding:8px 14px;cursor:pointer}
+.note{color:var(--muted);font-size:.78rem}
+</style>
+</head>
+<body>
+<main>
+<h1>CATCH-PE Score</h1>
+<p class="sub">Predicts one-year all-cause mortality after PE. CATCH-PE and Simplified CATCH-PE point values from Table 6 (derivation set, n = 1,230).</p>
+
+<div class="card">
+<h2>Patient variables</h2>
+<div id="form"></div>
+<div style="margin-top:10px"><button id="reset" type="button">Reset</button></div>
+</div>
+
+<div class="res" aria-live="polite">
+<div><div class="lbl">CATCH-PE</div><div class="val" id="s1">0</div></div>
+<div><div class="lbl">Simplified CATCH-PE</div><div class="val" id="s2">0</div></div>
+</div>
+
+<div class="card">
+<h2>Score breakdown</h2>
+<div class="wrap"><table id="tbl"></table></div>
+</div>
+
+<p class="note">Reference categories (male = no, BMI reference group, youngest age category) score 0. BMI Group 1/2 and Age category 2/3 cutoffs are defined in the source paper; confirm them there before use. This tool maps variables to points only; use the paper's risk stratification for interpretation. For clinical decision support, not a substitute for clinical judgment.</p>
+</main>
+<script>
+// pts: [CATCH-PE, Simplified]
+const Q=[
+ {id:'male',label:'Male sex',opts:[['No',[0,0]],['Yes',[1,0]]]},
+ {id:'bmi',label:'BMI group',hint:'Reference = BMI group lower than Group 1 (see paper for cutoffs)',opts:[['Reference',[0,0]],['Group 1',[-3,-0.5]],['Group 2',[-6,-1]]]},
+ {id:'age',label:'Age category',hint:'Reference = youngest category (see paper for cutoffs)',opts:[['Reference',[0,0]],['Category 2',[4,0.5]],['Category 3',[7,1]]]},
+ {id:'rr',label:'Respiratory rate ≥ 22',opts:[['No',[0,0]],['Yes',[6,1]]]},
+ {id:'surg',label:'Recent surgery',opts:[['No',[0,0]],['Yes',[-6,-1]]]},
+ {id:'ams',label:'Altered mental status',opts:[['No',[0,0]],['Yes',[7,1]]]},
+ {id:'ppe',label:'Prior PE',opts:[['No',[0,0]],['Yes',[-9,-1]]]},
+ {id:'ca',label:'Cancer',opts:[['No',[0,0]],['Yes',[14,2]]]}
+];
+const sel={};
+const f=document.getElementById('form');
+Q.forEach(q=>{
+  sel[q.id]=0;
+  const d=document.createElement('div');d.className='q';
+  let h='<span class="t">'+q.label+'</span><div class="opts">';
+  q.opts.forEach((o,i)=>{
+    h+='<input type="radio" name="'+q.id+'" id="'+q.id+i+'" value="'+i+'"'+(i===0?' checked':'')+'><label for="'+q.id+i+'">'+o[0]+'</label>';
+  });
+  h+='</div>'+(q.hint?'<div class="hint">'+q.hint+'</div>':'');
+  d.innerHTML=h;f.appendChild(d);
+  d.addEventListener('change',e=>{sel[q.id]=+e.target.value;calc();});
+});
+const fmt=n=>(n>0?'+':'')+(Number.isInteger(n)?n:n.toFixed(1));
+function calc(){
+  let a=0,b=0,rows='<tr><th>Variable</th><th>CATCH-PE</th><th>Simplified</th></tr>';
+  Q.forEach(q=>{
+    const o=q.opts[sel[q.id]],p=o[1];
+    a+=p[0];b+=p[1];
+    const c=n=>n>0?'pos':n<0?'neg':'';
+    rows+='<tr'+(sel[q.id]?' class="on"':'')+'><td>'+q.label+(q.opts.length>2||q.id==='male'?' — '+o[0]:'')+'</td><td class="'+c(p[0])+'">'+fmt(p[0])+'</td><td class="'+c(p[1])+'">'+fmt(p[1])+'</td></tr>';
+  });
+  rows+='<tr><td><b>Total</b></td><td><b>'+a+'</b></td><td><b>'+(Number.isInteger(b)?b:b.toFixed(1))+'</b></td></tr>';
+  document.getElementById('s1').textContent=a;
+  document.getElementById('s2').textContent=Number.isInteger(b)?b:b.toFixed(1);
+  document.getElementById('tbl').innerHTML=rows;
+}
+document.getElementById('reset').onclick=()=>{
+  Q.forEach(q=>{sel[q.id]=0;document.getElementById(q.id+'0').checked=true;});calc();
+};
+calc();
+</script>
+</body>
+</html>
